@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小马宝莉智能召唤阵 (分级管控版)</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            text-align: center;
+            padding: 50px;
+        }
+        .card {
+            background: #34495e;
+            border-radius: 15px;
+            padding: 30px;
+            width: 500px;
+            margin: 0 auto;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+        }
+        h1 { color: #8e44ad; }
+        img {
+            max-width: 100%;
+            border-radius: 10px;
+            min-height: 300px;
+            object-fit: cover;
+            margin-top: 15px;
+            background-color: #2c3e50;
+        }
+        .search-area {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px; /* 稍微增加一点间距 */
+        }
+        
+        /* 【新增】：让输入框和下拉菜单并排 */
+        .input-group {
+            display: flex;
+            width: 90%;
+            gap: 10px;
+        }
+        
+        input {
+            flex: 1; /* 让输入框占据剩余空间 */
+            padding: 10px;
+            border: 2px solid #8e44ad;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+            background: #ecf0f1;
+            color: #2c3e50;
+        }
+        
+        /* 【新增】：下拉菜单的样式 */
+        select {
+            padding: 10px;
+            border: 2px solid #8e44ad;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            background: #ecf0f1;
+            color: #2c3e50;
+            cursor: pointer;
+        }
+
+        button.main-btn {
+            background-color: #8e44ad;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            transition: 0.3s;
+            width: 90%;
+        }
+        button.main-btn:hover { background-color: #9b59b6; }
+        
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+            justify-content: center;
+            display: none; 
+        }
+        .action-buttons button { width: 50%; padding: 10px; border: none; border-radius: 8px; color: white; cursor: pointer; font-weight: bold;}
+        .download-btn { background-color: #27ae60; }
+        .download-btn:hover { background-color: #2ecc71; }
+        .reroll-btn { background-color: #e67e22; }
+        .reroll-btn:hover { background-color: #d35400; }
+
+        #loading-text { color: #bdc3c7; font-size: 14px; margin-top: 10px; height: 20px; }
+        .correction-tip { color: #e74c3c; font-size: 13px; font-weight: bold; margin-top: 5px; display: block; }
+        
+        /* 安全警告样式 */
+        .warning-text {
+            color: #f1c40f;
+            font-size: 12px;
+            margin-top: 5px;
+            display: none; /* 初始隐藏 */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1 id="char-name">智能小马图鉴</h1>
+        <p id="char-desc">支持多标签组合搜索，已开启内容风控机制。</p>
+        
+        <div class="search-area">
+            <div class="input-group">
+                <input type="text" id="char-input" placeholder="输入英文名，例: twilight sparkle">
+                
+                <!-- 【新增】：内容分级下拉选择器 -->
+                <select id="content-rating" onchange="checkRatingWarning()">
+                    <option value="safe" selected>全年龄 (Safe)</option>
+                    <option value="suggestive">13岁以上 (Suggestive)</option>
+                    <!-- 处于安全和合规考虑，我们不在这里提供 questionable 和 explicit 的选项 -->
+                </select>
+            </div>
+            
+            <button class="main-btn" onclick="processSearch()">联合召唤</button>
+        </div>
+        
+        <!-- 【新增】：当选择 13+ 时弹出的提示 -->
+        <p id="rating-warning" class="warning-text">⚠️ 提示：此分级可能包含轻微的擦边或战斗损伤画面。</p>
+
+        <span id="correction-tip" class="correction-tip"></span>
+        <img id="pony-img" src="https://via.placeholder.com/400x300/2c3e50/ffffff?text=等待输入..." alt="小马图片">
+        
+        <div id="action-buttons" class="action-buttons">
+            <button id="reroll-btn" class="reroll-btn" onclick="rerollImage()">🎲 换一张</button>
+            <button id="download-btn" class="download-btn" onclick="downloadImage()">💾 保存图片</button>
+        </div>
+        
+        <p id="loading-text"></p>
+    </div>
+
+    <script>
+        let currentImageUrl = ""; 
+        let lastSearchedTags = ""; 
+        // 【新增】：记住上一次选择的分级
+        let lastRating = "safe"; 
+
+        const ponyDictionary = [
+            "twilight sparkle", "applejack", "fluttershy", "rarity", "pinkie pie",
+            "rainbow dash", "spike", "princess celestia", "princess luna",
+            "starlight glimmer", "sunset shimmer", "trixie", "derpy"
+        ];
+
+        function levenshtein(a, b) {
+            if (a.length === 0) return b.length;
+            if (b.length === 0) return a.length;
+            const matrix = [];
+            for (let i = 0; i <= b.length; i++) { matrix[i] = [i]; }
+            for (let j = 0; j <= a.length; j++) { matrix[0][j] = j; }
+            for (let i = 1; i <= b.length; i++) {
+                for (let j = 1; j <= a.length; j++) {
+                    if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                        matrix[i][j] = matrix[i - 1][j - 1];
+                    } else {
+                        matrix[i][j] = Math.min(
+                            matrix[i - 1][j - 1] + 1,
+                            Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+                        );
+                    }
+                }
+            }
+            return matrix[b.length][a.length];
+        }
+
+        function getSmartTag(input) {
+            let bestMatch = input;
+            let minDistance = Infinity;
+            for (const name of ponyDictionary) {
+                const dist = levenshtein(input, name);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    bestMatch = name;
+                }
+            }
+            if (minDistance > 0 && minDistance <= 2) {
+                return { tag: bestMatch, corrected: true };
+            }
+            return { tag: input, corrected: false };
+        }
+
+        // 监听下拉菜单的变化，如果是 13+ 就显示警告文字
+        function checkRatingWarning() {
+            const rating = document.getElementById('content-rating').value;
+            const warning = document.getElementById('rating-warning');
+            if (rating === 'suggestive') {
+                warning.style.display = 'block';
+            } else {
+                warning.style.display = 'none';
+            }
+        }
+
+        document.getElementById('char-input').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') processSearch();
+        });
+
+        function processSearch() {
+            const rawInput = document.getElementById('char-input').value.trim().toLowerCase();
+            const correctionTip = document.getElementById('correction-tip');
+            
+            // 【核心逻辑】：获取用户当前在下拉菜单里选择的值
+            const currentRating = document.getElementById('content-rating').value;
+            
+            if (rawInput === "") return;
+
+            const inputTags = rawInput.split(',').map(tag => tag.trim()).filter(tag => tag !== "");
+            let finalTags = [];
+            let isCorrected = false;
+
+            for (let tag of inputTags) {
+                const result = getSmartTag(tag);
+                finalTags.push(result.tag);
+                if (result.corrected) {
+                    isCorrected = true;
+                }
+            }
+
+            const finalTagString = finalTags.join(', ');
+            lastSearchedTags = finalTagString;
+            // 更新全局变量，确保“换一张”的时候还是用这个分级
+            lastRating = currentRating; 
+
+            correctionTip.innerText = isCorrected ? `已自动纠正部分拼写为: ${finalTagString}` : "";
+            document.getElementById('char-name').innerText = "目标确认: " + finalTagString;
+            document.getElementById('action-buttons').style.display = "none";
+            
+            fetchPonyImage(finalTagString, currentRating);
+        }
+
+        function rerollImage() {
+            if (!lastSearchedTags) return; 
+            
+            // 1. 获取按钮元素
+            const rerollBtn = document.getElementById('reroll-btn');
+            
+            // 2. 立即禁用按钮，并改变样式提示用户
+            rerollBtn.disabled = true;
+            rerollBtn.innerText = "⏳ 冷却中...";
+            rerollBtn.style.backgroundColor = "#7f8c8d"; // 变成灰色
+            rerollBtn.style.cursor = "not-allowed";
+            
+            document.getElementById('action-buttons').style.display = "none";
+            
+            // 发起请求
+            fetchPonyImage(lastSearchedTags, lastRating); 
+            
+            // 3. 强制加入 1.5 秒的冷却时间，时间到了再恢复按钮状态
+            setTimeout(() => {
+                rerollBtn.disabled = false;
+                rerollBtn.innerText = "🎲 换一张";
+                rerollBtn.style.backgroundColor = "#e67e22"; // 恢复活泼的橙色
+                rerollBtn.style.cursor = "pointer";
+            }, 1500); 
+        }
+
+        // 【修改点】：函数接收第二个参数 `ratingTag`
+    async function fetchPonyImage(tagsString, ratingTag) {
+            const imgElement = document.getElementById('pony-img');
+            const loadingText = document.getElementById('loading-text');
+            
+           // 比如换成国内一个比较稳的占位图服务
+imgElement.src = "https://dummyimage.com/400x300/2c3e50/ffffff&text=Loading...";
+            loadingText.innerText = "正在从 Trixiebooru 检索...";
+
+            const query = encodeURIComponent(`${tagsString}, ${ratingTag}`);
+            const apiUrl = `https://trixiebooru.org/api/v1/json/search/images?q=${query}&sf=random&per_page=1`;
+
+            try {
+                const response = await fetch(apiUrl);
+                
+                // 【核心升级】：专门拦截 429 限流错误
+                if (response.status === 429) {
+                    loadingText.innerText = "🛑 慢一点！你被服务器临时限流了，请等待 5 分钟后再试。";
+                    imgElement.src = "https://via.placeholder.com/400x300/e74c3c/ffffff?text=请求太频繁";
+                    return; // 提前结束函数，不再往下执行
+                }
+                
+                // 拦截其他非 200 的报错
+                if (!response.ok) {
+                    throw new Error(`HTTP 错误代码: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.images && data.images.length > 0) {
+                    currentImageUrl = data.images[0].representations.full; 
+                    imgElement.src = data.images[0].representations.medium;
+                    loadingText.innerText = "召唤成功！";
+                    document.getElementById('action-buttons').style.display = "flex";
+                } else {
+                    imgElement.src = "https://via.placeholder.com/400x300/2c3e50/ffffff?text=查无结果";
+                    loadingText.innerText = "当前分级下没找到符合所有标签的图片。";
+                }
+           } catch (error) {
+                console.error("详细错误:", error);
+                
+                // 【核心升级】：通过 TypeError 反推跨域/限流问题
+                if (error.name === 'TypeError' || error.message.includes('Failed to fetch')) {
+                    loadingText.innerText = "🛑 触发了服务器限流 (429)！浏览器已拦截跨域。\n请耐心等待 5-10 分钟，让服务器消气后再试。";
+                    // 换一张红色的警告图
+                    imgElement.src = "https://dummyimage.com/400x300/c0392b/ffffff&text=Rate+Limited+(429)"; 
+                } else {
+                    loadingText.innerText = "发生未知网络错误，请检查连接。";
+                }
+            }
+        }       
+        async function downloadImage() {
+            if (!currentImageUrl) return;
+            const btn = document.getElementById('download-btn');
+            const originalText = btn.innerText;
+            btn.innerText = "⏳ 打包中...";
+
+            try {
+                const response = await fetch(currentImageUrl);
+                const blob = await response.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                const charName = document.getElementById('char-name').innerText.replace('目标确认: ', '').replace(/, /g, '_');
+                a.download = `Trixiebooru_${charName}_${Date.now()}.jpg`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove(); 
+                window.URL.revokeObjectURL(blobUrl);
+                btn.innerText = "✅ 保存成功！";
+            } catch (error) {
+                window.open(currentImageUrl, '_blank');
+                btn.innerText = "⚠️ 已在新页面打开";
+            }
+            setTimeout(() => { btn.innerText = originalText; }, 3000);
+        }
+    </script>
+</body>
+</html>
