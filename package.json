@@ -1,0 +1,55 @@
+{
+  "name": "pony-roulette",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit && vite build",
+    "start": "wrangler dev",
+    "test": "tsx --test tests/*.test.ts",
+    "verify:live": "tsx scripts/verify-live.ts",
+    "dev:worker": "wrangler dev",
+    "dev:proxy": "tsx scripts/dev-proxy.ts",
+    "dev:all": "concurrently -k \"npm:dev\" \"npm:dev:worker\"",
+    "deploy": "npm run build && wrangler deploy",
+    "check:worker": "wrangler deploy --dry-run",
+    "dev:node": "tsx watch server-node/index.ts",
+    "build:node": "npm run build && tsc -p tsconfig.server.json",
+    "start:node": "node dist/server-node/index.js"
+  },
+  "dependencies": {
+    "compression": "^1.8.1",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "undici": "^7.16.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260911.1",
+    "@types/compression": "^1.8.1",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.3.1",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@types/supertest": "^6.0.3",
+    "@vitejs/plugin-react": "^5.0.2",
+    "concurrently": "^9.2.1",
+    "esbuild": "^0.28.2",
+    "miniflare": "^5.20260911.0-alpha",
+    "prettier": "^3.9.6",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "wrangler": "^4.131.1"
+  }
+}

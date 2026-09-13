@@ -1,0 +1,37 @@
+name = "pony-roulette"
+main = "worker/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[assets]
+directory = "./dist/client"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[r2_buckets]]
+binding = "PONY_IMAGES"
+bucket_name = "pony-images"
+
+[vars]
+DERPIBOORU_BASE_URL = "https://derpibooru.org"
+REQUEST_TIMEOUT_MS = "10000"
+REQUEST_RETRIES = "2"
+MAX_IMAGE_SIZE_MB = "8"
+CACHE_TTL_DAYS = "30"
+EDGE_CACHE_SECONDS = "3600"
+
+[[ratelimits]]
+name = "RANDOM_LIMITER"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
+
+[[ratelimits]]
+name = "IMAGE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 240, period = 60 }
+
+[[ratelimits]]
+name = "HEALTH_LIMITER"
+namespace_id = "1003"
+simple = { limit = 12, period = 60 }

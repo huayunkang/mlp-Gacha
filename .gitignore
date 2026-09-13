@@ -1,0 +1,10 @@
+node_modules/
+dist/
+cache/
+.env
+*.log
+test-results/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example

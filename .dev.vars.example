@@ -1,0 +1,5 @@
+# Optional local overrides; defaults live in wrangler.toml.
+REQUEST_TIMEOUT_MS=10000
+REQUEST_RETRIES=2
+# Public API requests do not require a key.
+# DERPIBOORU_API_KEY=your_private_key
