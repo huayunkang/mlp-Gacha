@@ -6,7 +6,7 @@ import {
   query,
   type UpstreamImage,
   cdnUrl,
-} from "../shared/safety.js";
+} from "../shared/legacy-safety.js";
 import type { Character, Mode } from "../shared/types.js";
 const dispatcher = new EnvHttpProxyAgent();
 export class UpstreamError extends Error {

@@ -1,4 +1,4 @@
-export const POLICY_VERSION = "filter-v3";
+export const POLICY_VERSION = "providers-v1";
 export const blocked = [
   "explicit",
   "questionable",

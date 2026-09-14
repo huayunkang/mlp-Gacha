@@ -53,7 +53,7 @@ export async function getFilters(env: Env): Promise<FilterCatalog> {
         source: raw.source === "stale" ? "stale" : valid.source,
       };
     }
-    const object = await env.PONY_IMAGES.get(key);
+    const object = await env.PONY_IMAGES?.get(key);
     if (object) stale = validate(await object.json());
     if (stale && Date.now() - stale.fetchedAt < ttl) {
       await caches.default
@@ -77,9 +77,13 @@ export async function getFilters(env: Env): Promise<FilterCatalog> {
     catalog.source = "live";
     const body = JSON.stringify(catalog);
     await Promise.allSettled([
-      env.PONY_IMAGES.put(key, body, {
-        httpMetadata: { contentType: "application/json" },
-      }),
+      ...(env.PONY_IMAGES
+        ? [
+            env.PONY_IMAGES.put(key, body, {
+              httpMetadata: { contentType: "application/json" },
+            }),
+          ]
+        : []),
       caches.default.put(
         edgeKey,
         new Response(body, {

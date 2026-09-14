@@ -1,6 +1,6 @@
 import { fetch, EnvHttpProxyAgent } from "undici";
 import { mkdir, writeFile } from "node:fs/promises";
-import { query, imageSchema, safeImage } from "../shared/safety.js";
+import { query, imageSchema, safeImage } from "../shared/legacy-safety.js";
 import type { Character, Mode } from "../shared/types.js";
 const dispatcher = new EnvHttpProxyAgent();
 const cases: [Character, Mode][] = [

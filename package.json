@@ -1,6 +1,6 @@
 {
   "name": "pony-roulette",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,6 +12,7 @@
     "start": "wrangler dev",
     "test": "tsx --test tests/*.test.ts",
     "verify:live": "tsx scripts/verify-live.ts",
+    "verify:providers": "tsx scripts/verify-providers.ts",
     "dev:worker": "wrangler dev",
     "dev:proxy": "tsx scripts/dev-proxy.ts",
     "dev:all": "concurrently -k \"npm:dev\" \"npm:dev:worker\"",

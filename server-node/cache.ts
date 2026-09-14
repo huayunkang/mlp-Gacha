@@ -12,7 +12,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
 import type { Upstream } from "./upstream.js";
-import { imageSchema, safeImage } from "../shared/safety.js";
+import { imageSchema, safeImage } from "../shared/legacy-safety.js";
 const extensions: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",

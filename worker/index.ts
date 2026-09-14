@@ -3,9 +3,11 @@ import type { Env } from "./types";
 import { randomRoute } from "./routes/random";
 import { imageRoute } from "./routes/image";
 import { healthRoute } from "./routes/health";
-import { ServiceError, getFilteredImage } from "./services/derpibooru";
+import { ServiceError } from "./services/errors";
+import { getProviderImage } from "./services/providers";
 import { getFilters, resolveFilter } from "./services/filters";
 import { publicPony } from "../shared/safety";
+import { contentFields, contentSettings, providerAndId } from "./routes/params";
 function error(message: string, status: number) {
   return Response.json(
     { error: message },
@@ -59,11 +61,8 @@ export default {
           headers: { "Cache-Control": "public, max-age=300" },
         });
       } else if (route.startsWith("/api/metadata/")) {
-        const id = Number(
-          z
-            .string()
-            .regex(/^[1-9]\d{0,9}$/)
-            .parse(route.slice("/api/metadata/".length)),
+        const { provider, id } = providerAndId(
+          route.slice("/api/metadata/".length),
         );
         const p = z
           .object({
@@ -71,7 +70,7 @@ export default {
               .string()
               .regex(/^(0|[1-9]\d{0,9})$/)
               .optional(),
-            strict: z.enum(["0", "1"]).default("1"),
+            ...contentFields,
           })
           .strict()
           .parse(Object.fromEntries(url.searchParams));
@@ -79,17 +78,16 @@ export default {
           env,
           p.filter === undefined ? undefined : Number(p.filter),
         );
-        const strictSafe = f.id === 0 || p.strict === "1";
+        const content = contentSettings(p);
         response = Response.json(
           publicPony(
-            await getFilteredImage(env, id, f.id, strictSafe),
+            await getProviderImage(env, provider, id, content, f.id),
+            content,
             f.id,
-            strictSafe,
           ),
           { headers: { "Cache-Control": "no-store" } },
         );
-      } else if (route === "/api/health")
-        response = await healthRoute(url, env, ctx);
+      } else if (route === "/api/health") response = await healthRoute(env);
       else if (route.startsWith("/api/image/"))
         response = await imageRoute(
           request,

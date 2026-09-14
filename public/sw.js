@@ -1,4 +1,4 @@
-const SHELL = "pony-shell-v2-release";
+const SHELL = "pony-shell-v3-release";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches

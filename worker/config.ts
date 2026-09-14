@@ -18,6 +18,7 @@ export function settings(env: Env) {
     throw new Error("Unsupported API origin");
   return {
     timeout: number(env.REQUEST_TIMEOUT_MS, 10000, 100, 30000),
+    providerTimeout: number(env.PROVIDER_TIMEOUT_MS, 3500, 500, 10000),
     retries: number(env.REQUEST_RETRIES, 2, 0, 2),
     maxBytes: number(env.MAX_IMAGE_SIZE_MB, 8, 1, 16) * 1024 ** 2,
     ttl: number(env.CACHE_TTL_DAYS, 30, 1, 90) * 86400000,

@@ -1,6 +1,7 @@
 import type { Pony } from "../shared/types";
 import { rarity, rarities } from "../shared/rarity";
 import { characters } from "../shared/types";
+import { migrateSavedPony } from "./storage";
 export interface Discovery extends Pony {
   count: number;
   firstSeen: number;
@@ -19,7 +20,7 @@ export const blankJournal = (): Journal => ({
   achievements: [],
 });
 export function discover(j: Journal, p: Pony) {
-  const old = j.items.find((i) => i.id === p.id);
+  const old = j.items.find((item) => item.canonicalId === p.canonicalId);
   return {
     ...j,
     totalRolls: j.totalRolls + 1,
@@ -31,7 +32,7 @@ export function discover(j: Journal, p: Pony) {
         firstSeen: old?.firstSeen ?? Date.now(),
         lastSeen: Date.now(),
       },
-      ...j.items.filter((i) => i.id !== p.id),
+      ...j.items.filter((item) => item.canonicalId !== p.canonicalId),
     ],
   };
 }
@@ -69,23 +70,29 @@ export async function readJournal(): Promise<Journal> {
         resolve(blankJournal());
         return;
       }
-      const items = j.items.filter(
-        (p: Discovery) =>
-          p &&
-          Number.isSafeInteger(p.id) &&
-          p.id > 0 &&
-          Number.isFinite(p.score) &&
-          Number.isFinite(p.width) &&
-          Number.isFinite(p.height) &&
-          Array.isArray(p.tags) &&
-          p.tags.every((t) => typeof t === "string") &&
-          Array.isArray(p.artists) &&
-          p.artists.every((t) => typeof t === "string") &&
-          Number.isFinite(p.count) &&
-          p.count >= 0 &&
-          Number.isFinite(p.firstSeen) &&
-          Number.isFinite(p.lastSeen),
-      );
+      const items = j.items.flatMap((item: Discovery) => {
+        if (
+          !Number.isFinite(item.count) ||
+          item.count < 0 ||
+          !Number.isFinite(item.firstSeen) ||
+          !Number.isFinite(item.lastSeen)
+        )
+          return [];
+        const migrated = migrateSavedPony({
+          ...item,
+          savedAt: item.lastSeen,
+        });
+        return migrated
+          ? [
+              {
+                ...migrated,
+                count: item.count,
+                firstSeen: item.firstSeen,
+                lastSeen: item.lastSeen,
+              },
+            ]
+          : [];
+      });
       resolve({
         items,
         totalRolls: Math.max(0, j.totalRolls),

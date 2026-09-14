@@ -15,9 +15,14 @@ import {
 } from "lucide-react";
 import {
   characters,
+  type AdultMode,
   type Character,
+  type ContentLevel,
+  type ContentSettings,
+  type GraphicLevel,
   type Mode,
   type Pony,
+  type ProviderId,
   type SavedPony,
 } from "../shared/types";
 import { randomPony, loadImage } from "./api";
@@ -43,6 +48,79 @@ const modes: { key: Mode; name: string; icon: typeof Dices }[] = [
   { key: "featured", name: "精选画廊", icon: Star },
   { key: "surprise", name: "Surprise Me", icon: Dices },
 ];
+const providerLabels: Record<ProviderId, string> = {
+  derpibooru: "Derpibooru",
+  trixiebooru: "Trixiebooru",
+  twibooru: "Twibooru",
+};
+const contentLabels: Record<ContentLevel, string> = {
+  safe: "🛡 Safe",
+  teen: "🌙 13+",
+  adult: "🔞 18+",
+};
+const graphicLabels: Record<GraphicLevel, string> = {
+  clean: "✨ Clean",
+  dark: "🌑 Dark",
+  graphic: "🩸 Graphic",
+};
+const isAdult = (p: Pick<Pony, "rating">) =>
+  p.rating === "questionable" || p.rating === "explicit";
+const contentBucket = (p: Pick<Pony, "rating">): ContentLevel =>
+  p.rating === "suggestive" ? "teen" : isAdult(p) ? "adult" : "safe";
+const graphicRank: Record<string, number> = {
+  clean: 0,
+  dark: 1,
+  graphic: 2,
+  unknown: 3,
+};
+function ponyStub(
+  provider: ProviderId,
+  id: number,
+  rating: Pony["rating"] = "safe",
+  graphicLevel: Pony["graphicLevel"] = "clean",
+): SavedPony {
+  return {
+    id,
+    provider,
+    providerId: id,
+    canonicalId: `${provider}:${id}`,
+    width: 0,
+    height: 0,
+    format: "",
+    score: 0,
+    tags: [],
+    artists: [],
+    pageUrl: "",
+    rating,
+    graphicLevel,
+    spoilered: true,
+    featured: false,
+    image: "",
+    preview: "",
+    contentLevel: rating === "safe" ? "safe" : "adult",
+    adultMode: "all",
+    selectedGraphicLevel:
+      graphicLevel === "dark" || graphicLevel === "graphic"
+        ? graphicLevel
+        : "clean",
+    savedAt: 0,
+  };
+}
+function savedContentSettings(p: Pony): ContentSettings {
+  return {
+    contentLevel: contentBucket(p),
+    adultMode:
+      p.rating === "explicit"
+        ? "explicit"
+        : p.rating === "questionable"
+          ? "questionable"
+          : "all",
+    graphicLevel:
+      p.graphicLevel === "dark" || p.graphicLevel === "graphic"
+        ? p.graphicLevel
+        : "clean",
+  };
+}
 export default function App() {
   const [character, setCharacter] = useState<Character>("all"),
     [mode, setMode] = useState<Mode>("random"),
@@ -88,24 +166,51 @@ export default function App() {
   const [autoSpoilers, setAutoSpoilers] = useState(() =>
     preference("pony_auto_spoilers", false),
   );
-  const [strictSafe, setStrictSafe] = useState(() =>
-    preference("pony_strict_safe", true),
+  const [contentLevel, setContentLevel] = useState<ContentLevel>(() =>
+    preference("pony_content_level", "safe"),
   );
-  const [safetyConfirm, setSafetyConfirm] = useState(false);
+  const [adultMode, setAdultMode] = useState<AdultMode>(() =>
+    preference("pony_adult_mode", "all"),
+  );
+  const [graphicLevel, setGraphicLevel] = useState<GraphicLevel>(() =>
+    preference("pony_graphic_level", "clean"),
+  );
+  const [adultConfirmed, setAdultConfirmed] = useState(() =>
+    preference("pony_adult_confirmed", false),
+  );
+  const [adultConfirm, setAdultConfirm] = useState(false);
+  const [blurAdultThumbs, setBlurAdultThumbs] = useState(() =>
+    preference("pony_blur_adult_thumbnails", true),
+  );
   const [stage, setStage] = useState<Stage>("idle");
   const [tier, setTier] = useState<ReturnType<typeof rarity>>("Common");
   const [journal, setJournal] = useState(blankJournal);
   const [journalReady, setJournalReady] = useState(false);
   const [search, setSearch] = useState("");
   const [rarityFilter, setRarityFilter] = useState("All");
+  const [collectionContent, setCollectionContent] = useState<
+    "all" | ContentLevel
+  >("all");
+  const [collectionGraphic, setCollectionGraphic] = useState<
+    "all" | GraphicLevel
+  >("all");
   const [service, setService] = useState("");
   const [rollTag, setRollTag] = useState("");
   const [quality, setQuality] = useState<
     "auto" | "saver" | "high" | "original"
   >(() => preference("pony_quality", "auto"));
   const restored = useRef(false);
+  const activeContent: ContentSettings = {
+    contentLevel,
+    adultMode,
+    graphicLevel,
+  };
   const imageSource = useCallback(
-    (p: Pony, representation: "main" | "preview" = "main") => {
+    (
+      p: Pony,
+      representation: "main" | "preview" = "main",
+      override?: ContentSettings,
+    ) => {
       const connection = (
         navigator as Navigator & {
           connection?: { saveData?: boolean; effectiveType?: string };
@@ -118,15 +223,17 @@ export default function App() {
             connection?.effectiveType === "2g" ||
             innerWidth < 650));
       const params = new URLSearchParams({
-        filter: String(p.filterId ?? filter),
-        strict: strictSafe ? "1" : "0",
+        filter: String(filter),
+        content: (override ?? activeContent).contentLevel,
+        adultMode: (override ?? activeContent).adultMode,
+        graphic: (override ?? activeContent).graphicLevel,
       });
       if (representation === "preview") params.set("size", "preview");
       else if (quality === "original") params.set("size", "original");
       else if (saver) params.set("size", "saver");
-      return `/api/image/${p.id}?${params}`;
+      return `/api/image/${p.provider ?? "derpibooru"}/${p.providerId ?? p.id}?${params}`;
     },
-    [quality, filter, strictSafe],
+    [quality, filter, contentLevel, adultMode, graphicLevel],
   );
   const skip = useRef(false),
     stageResolve = useRef<(() => void) | null>(null);
@@ -150,7 +257,7 @@ export default function App() {
             ...readList("pony-history"),
             ...readList("pony-favorites"),
           ])
-            if (!j.items.some((i) => i.id === p.id))
+            if (!j.items.some((i) => i.canonicalId === p.canonicalId))
               j.items.push({
                 ...p,
                 count: 0,
@@ -222,22 +329,17 @@ export default function App() {
   };
   const currentFilter =
     catalog.filters.find((f) => f.id === filter) ?? safeFilter;
-  useEffect(() => {
-    if (currentFilter.id !== 0 || strictSafe) return;
-    setStrictSafe(true);
-    storePreference("pony_strict_safe", true);
-  }, [currentFilter.id, strictSafe]);
-  const updateStrictSafe = (enabled: boolean) => {
-    if (!enabled && currentFilter.id === 0) {
-      setNotice("公开 Filter 暂不可用时，严格 Safe 保护会保持开启。");
+  const chooseContentLevel = (level: ContentLevel) => {
+    if (level === "adult" && !adultConfirmed) {
+      setAdultConfirm(true);
       return;
     }
-    if (!enabled) {
-      setSafetyConfirm(true);
-      return;
-    }
-    setStrictSafe(true);
-    storePreference("pony_strict_safe", true);
+    setContentLevel(level);
+    storePreference("pony_content_level", level);
+  };
+  const chooseGraphicLevel = (level: GraphicLevel) => {
+    setGraphicLevel(level);
+    storePreference("pony_graphic_level", level);
   };
   const active = useRef<AbortController | null>(null),
     prefetch = useRef<{
@@ -246,10 +348,11 @@ export default function App() {
       controller: AbortController;
     } | null>(null),
     locked = useRef(false),
-    currentId = useRef<number | undefined>(undefined),
+    currentId = useRef<string | undefined>(undefined),
+    pendingAdult = useRef<SavedPony | null>(null),
     dialog = useRef<HTMLDialogElement>(null);
   const remember = useCallback((p: Pony) => {
-    currentId.current = p.id;
+    currentId.current = p.canonicalId;
     setPony(p);
     setMore(false);
     setRevealed(false);
@@ -273,7 +376,7 @@ export default function App() {
     active.current = controller;
     const started = Date.now();
     try {
-      const key = `${character}:${mode}:${filter}:${strictSafe}:${rollTag}`;
+      const key = `${character}:${mode}:${filter}:${contentLevel}:${adultMode}:${graphicLevel}:${rollTag}`;
       const pending = prefetch.current;
       if (pending)
         controller.signal.addEventListener(
@@ -291,7 +394,7 @@ export default function App() {
               currentId.current,
               filter,
               rollTag,
-              strictSafe,
+              activeContent,
             ),
           )
         : randomPony(
@@ -301,13 +404,13 @@ export default function App() {
             currentId.current,
             filter,
             rollTag,
-            strictSafe,
+            activeContent,
           ));
       const item = {
         ...p,
         image: imageSource(p),
         preview: imageSource(p, "preview"),
-        strictSafe,
+        spoilered: p.spoilered || (blurAdultThumbs && isAdult(p)),
       };
       await loadImage(item.image, controller.signal);
       const fast = reduced || animation === "fast";
@@ -342,22 +445,27 @@ export default function App() {
       await pause(fast ? 100 : rarities.indexOf(rarity(item)) >= 3 ? 850 : 400);
       if (controller.signal.aborted) return;
       remember(item);
-      setRevealed(autoSpoilers);
+      setRevealed(autoSpoilers && !(blurAdultThumbs && isAdult(item)));
       setJournal((j) => discover(j, item));
       if (rarity(item) === "Harmony" && !reduced)
         navigator.vibrate?.([20, 30, 20]);
       const shareUrl = new URL(location.href);
-      shareUrl.searchParams.set("image", String(p.id));
+      shareUrl.searchParams.set("image", `${p.provider}:${p.providerId}`);
+      if (isAdult(p)) shareUrl.searchParams.set("adult", "1");
+      else shareUrl.searchParams.delete("adult");
+      if (p.graphicLevel === "dark" || p.graphicLevel === "graphic")
+        shareUrl.searchParams.set("graphic", p.graphicLevel);
+      else shareUrl.searchParams.delete("graphic");
       history.replaceState(null, "", shareUrl);
       const pc = new AbortController();
       const promise = randomPony(
         character,
         mode,
         pc.signal,
-        item.id,
+        item.canonicalId,
         filter,
         rollTag,
-        strictSafe,
+        activeContent,
       );
       promise.catch(() => {});
       prefetch.current = { key, promise, controller: pc };
@@ -386,7 +494,10 @@ export default function App() {
     autoSpoilers,
     imageSource,
     rollTag,
-    strictSafe,
+    contentLevel,
+    adultMode,
+    graphicLevel,
+    blurAdultThumbs,
   ]);
   useEffect(() => {
     active.current?.abort();
@@ -401,12 +512,12 @@ export default function App() {
       active.current?.abort();
       prefetch.current?.controller.abort();
     };
-  }, [character, mode, filter, strictSafe, rollTag]);
+  }, [character, mode, filter, contentLevel, adultMode, graphicLevel, rollTag]);
   const toggleFavorite = useCallback(() => {
     if (!pony) return;
     setFavorites((old) => {
-      const list = old.some((p) => p.id === pony.id)
-        ? old.filter((p) => p.id !== pony.id)
+      const list = old.some((p) => p.canonicalId === pony.canonicalId)
+        ? old.filter((p) => p.canonicalId !== pony.canonicalId)
         : [{ ...pony, savedAt: Date.now() }, ...old].slice(0, 1000);
       if (!saveList("pony-favorites", list))
         setNotice("收藏未能保存：浏览器存储不可用或空间不足。");
@@ -439,7 +550,27 @@ export default function App() {
     if (panel) dialog.current?.showModal();
     else dialog.current?.close();
   }, [panel]);
-  const reopen = async (p: SavedPony) => {
+  const reopen = async (p: SavedPony, override?: ContentSettings) => {
+    let requested = override ?? activeContent;
+    if (isAdult(p) && requested.contentLevel !== "adult") {
+      if (!adultConfirmed && !override) {
+        pendingAdult.current = p;
+        setAdultConfirm(true);
+        setPanel("filters");
+        return;
+      }
+      requested = { ...requested, contentLevel: "adult" };
+      setContentLevel("adult");
+      storePreference("pony_content_level", "adult");
+    }
+    if (
+      p.graphicLevel !== "unknown" &&
+      graphicRank[p.graphicLevel] > graphicRank[requested.graphicLevel]
+    ) {
+      setPanel("filters");
+      setNotice("这张图片超出当前图形内容等级，请先调整 Graphic Content。");
+      return;
+    }
     active.current?.abort();
     prefetch.current?.controller.abort();
     prefetch.current = null;
@@ -458,13 +589,19 @@ export default function App() {
           ...readList("pony-favorites"),
           ...readList("pony-history"),
           ...journal.items,
-        ].find((i) => i.id === p.id);
+        ].find((item) => item.canonicalId === p.canonicalId);
         if (!known) throw new Error("Offline metadata unavailable");
         item = { ...known, spoilered: true };
       }
       if (navigator.onLine) {
+        const params = new URLSearchParams({
+          filter: String(filter),
+          content: requested.contentLevel,
+          adultMode: requested.adultMode,
+          graphic: requested.graphicLevel,
+        });
         const r = await fetch(
-          `/api/metadata/${p.id}?filter=${filter}&strict=${strictSafe ? "1" : "0"}`,
+          `/api/metadata/${p.provider}/${p.providerId}?${params}`,
           {
             signal: AbortSignal.any([c.signal, AbortSignal.timeout(40000)]),
           },
@@ -474,16 +611,21 @@ export default function App() {
       }
       item = {
         ...item,
-        image: imageSource(item),
-        preview: imageSource(item, "preview"),
-        strictSafe,
+        image: imageSource(item, "main", requested),
+        preview: imageSource(item, "preview", requested),
+        spoilered: item.spoilered || (blurAdultThumbs && isAdult(item)),
       };
       await loadImage(item.image, c.signal);
       if (!c.signal.aborted) {
         remember(item);
-        setRevealed(autoSpoilers);
+        setRevealed(autoSpoilers && !(blurAdultThumbs && isAdult(item)));
         const u = new URL(location.href);
-        u.searchParams.set("image", String(item.id));
+        u.searchParams.set("image", `${item.provider}:${item.providerId}`);
+        if (isAdult(item)) u.searchParams.set("adult", "1");
+        else u.searchParams.delete("adult");
+        if (item.graphicLevel === "dark" || item.graphicLevel === "graphic")
+          u.searchParams.set("graphic", item.graphicLevel);
+        else u.searchParams.delete("graphic");
         history.replaceState(null, "", u);
       }
     } catch {
@@ -495,25 +637,50 @@ export default function App() {
       }
     }
   };
+  const confirmAdultAccess = () => {
+    const pending = pendingAdult.current;
+    pendingAdult.current = null;
+    const nextAdultMode = pending ? "all" : adultMode;
+    setAdultConfirmed(true);
+    setContentLevel("adult");
+    setAdultMode(nextAdultMode);
+    setAdultConfirm(false);
+    storePreference("pony_adult_confirmed", true);
+    storePreference("pony_content_level", "adult");
+    storePreference("pony_adult_mode", nextAdultMode);
+    if (pending)
+      void reopen(pending, {
+        contentLevel: "adult",
+        adultMode: nextAdultMode,
+        graphicLevel,
+      });
+  };
   useEffect(() => {
     if (!filtersReady || restored.current) return;
     restored.current = true;
-    const id = new URLSearchParams(location.search).get("image");
-    if (id && /^[1-9]\d{0,9}$/.test(id))
-      void reopen({
-        id: Number(id),
-        image: "",
-        preview: "",
-        width: 0,
-        height: 0,
-        tags: [],
-        artists: [],
-        score: 0,
-        sourceUrl: "",
-        savedAt: 0,
-      });
+    const params = new URLSearchParams(location.search);
+    const value = params.get("image") ?? "";
+    const match =
+      /^(?:(derpibooru|trixiebooru|twibooru):)?([1-9]\d{0,9})$/.exec(value);
+    if (!match) return;
+    const item = ponyStub(
+      (match[1] as ProviderId | undefined) ?? "derpibooru",
+      Number(match[2]),
+      params.get("adult") === "1" ? "questionable" : "safe",
+      params.get("graphic") === "dark" || params.get("graphic") === "graphic"
+        ? (params.get("graphic") as GraphicLevel)
+        : "clean",
+    );
+    if (params.get("adult") === "1" && !adultConfirmed) {
+      pendingAdult.current = item;
+      setAdultConfirm(true);
+      setPanel("filters");
+      return;
+    }
+    void reopen(item);
   }, [filtersReady]);
-  const saved = pony && favorites.some((p) => p.id === pony.id);
+  const saved =
+    pony && favorites.some((p) => p.canonicalId === pony.canonicalId);
   const names = pony
     ? Object.entries(characters)
         .filter(([k, v]) => k !== "all" && pony.tags.includes(v.toLowerCase()))
@@ -525,11 +692,26 @@ export default function App() {
       : panel === "collection"
         ? journal.items
             .filter((p) => rarityFilter === "All" || rarity(p) === rarityFilter)
+            .filter(
+              (p) =>
+                collectionContent === "all" ||
+                contentBucket(p) === collectionContent,
+            )
+            .filter(
+              (p) =>
+                collectionGraphic === "all" ||
+                p.graphicLevel === collectionGraphic,
+            )
             .map((p) => ({ ...p, savedAt: p.lastSeen }))
         : readList("pony-history");
   const share = async () => {
     if (!pony) return;
-    const url = `${location.origin}/?image=${pony.id}`;
+    const shared = new URL(location.origin);
+    shared.searchParams.set("image", `${pony.provider}:${pony.providerId}`);
+    if (isAdult(pony)) shared.searchParams.set("adult", "1");
+    if (pony.graphicLevel === "dark" || pony.graphicLevel === "graphic")
+      shared.searchParams.set("graphic", pony.graphicLevel);
+    const url = shared.toString();
     const text = `Pony Roulette Discovery · ${rarityLabel(pony)} · ${names.join(", ") || "MLP"} · #${pony.id}`;
     try {
       if (navigator.share)
@@ -558,10 +740,8 @@ export default function App() {
         </a>
         <nav>
           <button onClick={() => setPanel("filters")}>
-            {!strictSafe || (filter !== catalog.defaultId && filter !== 0)
-              ? "⚠"
-              : "🛡"}{" "}
-            {currentFilter.name}
+            {contentLevel === "adult" || graphicLevel === "graphic" ? "⚠" : "🛡"}{" "}
+            {contentLabels[contentLevel]} · {graphicLabels[graphicLevel]}
           </button>
           <button onClick={() => setPanel("collection")}>
             图鉴 <b>{journal.items.length}</b>
@@ -616,6 +796,13 @@ export default function App() {
               onClick={() => setPanel("characters")}
             >
               {characters[character]} <ChevronDown size={14} />
+            </button>
+            <button
+              className="character-select content-select"
+              onClick={() => setPanel("filters")}
+            >
+              {contentLabels[contentLevel]} · {graphicLabels[graphicLevel]}{" "}
+              <ChevronDown size={14} />
             </button>
             {rollTag && (
               <button onClick={() => setRollTag("")}>Tag: {rollTag} ×</button>
@@ -679,19 +866,20 @@ export default function App() {
                     className="spoiler-cover"
                     onClick={() => setRevealed(true)}
                   >
-                    ⚠ Spoiler · 点击显示
+                    {isAdult(pony) ? "🔞 Adult Content" : "⚠ Spoiler"} ·
+                    点击显示
                   </button>
                 )}
                 {pony && !busy && (
                   <Particles
-                    key={pony.id}
+                    key={pony.canonicalId}
                     tier={rarity(pony)}
                     enabled={!reduced && animation === "full" && !skip.current}
                   />
                 )}
                 <div className="safe-badge">
-                  <ShieldCheck size={13} />{" "}
-                  {strictSafe ? "STRICT SAFE" : "FILTER MANAGED"}
+                  <ShieldCheck size={13} /> {contentLevel.toUpperCase()} ·{" "}
+                  {graphicLevel.toUpperCase()}
                 </div>
                 <span className="frame-star top">✧</span>
                 <span className="frame-star bottom">✧</span>
@@ -750,9 +938,10 @@ export default function App() {
                         {rarityLabel(pony)}
                       </div>
                       <small className="new-discovery">
-                        {(journal.items.find((i) => i.id === pony.id)?.count ??
-                          1) > 1
-                          ? `DUPLICATE ×${journal.items.find((i) => i.id === pony.id)?.count}`
+                        {(journal.items.find(
+                          (item) => item.canonicalId === pony.canonicalId,
+                        )?.count ?? 1) > 1
+                          ? `DUPLICATE ×${journal.items.find((item) => item.canonicalId === pony.canonicalId)?.count}`
                           : "✨ NEW DISCOVERY"}
                         {journal.streak > 1
                           ? ` · ${journal.streak} NEW STREAK`
@@ -810,11 +999,12 @@ export default function App() {
                   <span>#{pony.id}</span>
                 </div>
                 <a
-                  href={pony.sourceUrl}
+                  href={pony.pageUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  查看 Derpibooru 原页面 <ExternalLink size={13} />
+                  查看 {providerLabels[pony.provider]} 原页面{" "}
+                  <ExternalLink size={13} />
                 </a>
               </>
             ) : (
@@ -839,10 +1029,8 @@ export default function App() {
         </section>
         <div className="under-note">
           <span>
-            <ShieldCheck size={14} />{" "}
-            {strictSafe
-              ? "严格 Safe 内容保护已开启"
-              : `按 ${currentFilter.name} 的 Derpibooru Filter 规则展示`}
+            <ShieldCheck size={14} /> {contentLabels[contentLevel]} ·{" "}
+            {graphicLabels[graphicLevel]} · {currentFilter.name}
           </span>
           <span className="keyboard">
             <kbd>Space</kbd> 下一张 <i>·</i> <kbd>F</kbd> 收藏
@@ -881,7 +1069,7 @@ export default function App() {
                 : panel === "history"
                   ? "最近看过"
                   : panel === "filters"
-                    ? "Derpibooru Filters"
+                    ? "Filters"
                     : panel === "characters"
                       ? "Choose your pony"
                       : panel === "collection"
@@ -906,7 +1094,7 @@ export default function App() {
         {panel === "tutorial" ? (
           <div className="settings">
             <h3>01 · 选择喜欢的 Filter</h3>
-            <p>首次使用 Default 与本站安全底线。</p>
+            <p>首次使用 Safe + Clean；两个内容维度可以独立调整。</p>
             <h3>02 · 选择角色</h3>
             <p>找熟悉的小马，或把惊喜交给随机。</p>
             <h3>03 · 转动扭蛋机</h3>
@@ -1091,15 +1279,21 @@ export default function App() {
               {pony.width} × {pony.height} · {pony.format ?? "—"}
             </p>
             <p>Created · {pony.createdAt ?? "—"}</p>
-            {pony.featured && <p>⭐ Featured on Derpibooru</p>}
+            <p>Data Source · {providerLabels[pony.provider]}</p>
+            <p>
+              Content · {pony.rating} / {pony.graphicLevel}
+            </p>
+            {pony.featured && (
+              <p>⭐ Featured on {providerLabels[pony.provider]}</p>
+            )}
             {pony.score >= 600 && <p>✦ Community Favorite</p>}
             <button className="roll" onClick={() => void share()}>
               Share Discovery ↗
             </button>
-            <a href={pony.sourceUrl} target="_blank" rel="noopener noreferrer">
-              Derpibooru Page ↗
+            <a href={pony.pageUrl} target="_blank" rel="noopener noreferrer">
+              {providerLabels[pony.provider]} Page ↗
             </a>
-            {pony.sources?.map((s) => (
+            {pony.sourceUrls?.map((s) => (
               <a key={s} href={s} target="_blank" rel="noopener noreferrer">
                 Source ↗
               </a>
@@ -1125,12 +1319,108 @@ export default function App() {
             <small>稀有度是本站图片发现机制，并非 Derpibooru 官方评级。</small>
           </div>
         ) : panel === "filters" ? (
-          <FilterSelector
-            catalog={catalog}
-            selected={filter}
-            strictSafe={strictSafe}
-            onSelect={chooseFilter}
-          />
+          <div className="settings filter-settings">
+            <section className="content-filter-section">
+              <span className="eyebrow">SEXUAL CONTENT</span>
+              <div className="content-choice-grid">
+                {(
+                  [
+                    ["safe", "🛡 Safe", "普通公开内容"],
+                    ["teen", "🌙 13+", "轻度暗示内容"],
+                    ["adult", "🔞 18+", "成人内容"],
+                  ] as const
+                ).map(([value, label, description]) => (
+                  <button
+                    key={value}
+                    className={contentLevel === value ? "selected" : ""}
+                    aria-pressed={contentLevel === value}
+                    onClick={() => chooseContentLevel(value)}
+                  >
+                    <strong>{label}</strong>
+                    <small>{description}</small>
+                  </button>
+                ))}
+              </div>
+              {contentLevel === "adult" && (
+                <div className="adult-modes">
+                  <span>ADULT CONTENT</span>
+                  {(
+                    [
+                      ["all", "All Adult"],
+                      ["questionable", "Questionable"],
+                      ["explicit", "Explicit Only"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={adultMode === value ? "selected" : ""}
+                      onClick={() => {
+                        setAdultMode(value);
+                        storePreference("pony_adult_mode", value);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+            <section className="content-filter-section">
+              <span className="eyebrow">GRAPHIC CONTENT</span>
+              <div className="content-choice-grid">
+                {(
+                  [
+                    ["clean", "✨ Clean", "隐藏黑暗、血腥和猎奇"],
+                    ["dark", "🌑 Dark", "允许 Grimdark，隐藏明显血腥"],
+                    ["graphic", "🩸 Graphic", "允许重度图形内容"],
+                  ] as const
+                ).map(([value, label, description]) => (
+                  <button
+                    key={value}
+                    className={graphicLevel === value ? "selected" : ""}
+                    aria-pressed={graphicLevel === value}
+                    onClick={() => chooseGraphicLevel(value)}
+                  >
+                    <strong>{label}</strong>
+                    <small>{description}</small>
+                  </button>
+                ))}
+              </div>
+              <small>性内容与图形内容是两个独立维度，互不自动改变。</small>
+            </section>
+            <section className="content-filter-section advanced-filter">
+              <span className="eyebrow">DERPIBOORU FILTER · ADVANCED</span>
+              <FilterSelector
+                catalog={catalog}
+                selected={filter}
+                onSelect={chooseFilter}
+              />
+            </section>
+            {adultConfirm && (
+              <div
+                className="filter-confirm adult-confirm"
+                role="alertdialog"
+                aria-label="Adult Content 确认"
+              >
+                <h3>Adult Content</h3>
+                <p>
+                  此模式可能显示明确的成人内容。只有在你已满 18
+                  岁，并且此类内容在你所在地允许查看时，才应继续。
+                </p>
+                <button
+                  onClick={() => {
+                    pendingAdult.current = null;
+                    setAdultConfirm(false);
+                  }}
+                >
+                  返回
+                </button>
+                <button className="roll" onClick={confirmAdultAccess}>
+                  我已满 18 岁，继续
+                </button>
+              </div>
+            )}
+          </div>
         ) : panel === "settings" ? (
           <div className="settings">
             <label>
@@ -1169,56 +1459,15 @@ export default function App() {
               清晰度应用于下一张图片；Auto
               会考虑手机屏幕与省流量设置。原图仍受代理大小上限保护。
             </small>
-            <label>
-              <span>
-                严格 Safe 内容保护
-                <small>
-                  开启时只抽取 safe 标签且排除本站严格内容标签；关闭后按所选
-                  Derpibooru Filter 的规则展示。
-                </small>
-              </span>
-              <input
-                type="checkbox"
-                checked={strictSafe}
-                disabled={currentFilter.id === 0}
-                onChange={(e) => updateStrictSafe(e.target.checked)}
-              />
-            </label>
-            {currentFilter.id === 0 && (
-              <small>正在使用安全回退 Filter，因此严格保护不可关闭。</small>
-            )}
-            {safetyConfirm && (
-              <div
-                className="filter-confirm"
-                role="alertdialog"
-                aria-label="确认关闭严格 Safe 内容保护"
-              >
-                <h3>关闭严格 Safe 内容保护？</h3>
-                <p>
-                  之后的抽取将使用当前 Derpibooru Filter，而不再额外要求 safe
-                  标签。删除、隐藏图片及当前 Filter 的隐藏规则仍会被拦截。
-                </p>
-                <button onClick={() => setSafetyConfirm(false)}>
-                  保持开启
-                </button>
-                <button
-                  className="roll"
-                  onClick={() => {
-                    setStrictSafe(false);
-                    storePreference("pony_strict_safe", false);
-                    setSafetyConfirm(false);
-                    setNotice(
-                      "严格 Safe 内容保护已关闭；当前规则由 Filter 管理。",
-                    );
-                  }}
-                >
-                  我了解，关闭保护
-                </button>
-              </div>
-            )}
             {(
               [
                 ["Sound Effects", audio, setAudio, "pony_sound"],
+                [
+                  "Blur adult thumbnails",
+                  blurAdultThumbs,
+                  setBlurAdultThumbs,
+                  "pony_blur_adult_thumbnails",
+                ],
                 [
                   "Auto Reveal Spoilers",
                   autoSpoilers,
@@ -1256,11 +1505,17 @@ export default function App() {
                   setService("检查中");
                   void fetch("/api/health")
                     .then((r) => r.json())
-                    .then((v) =>
+                    .then((v) => {
+                      const status = (id: ProviderId) =>
+                        v.providers?.[id] === "online"
+                          ? "● Online"
+                          : v.providers?.[id] === "unknown"
+                            ? "◌ Waiting"
+                            : "○ Unavailable";
                       setService(
-                        `Derpibooru · ${v.derpibooru === "reachable" ? "● Online" : "○ Unavailable"}\nR2 · ${v.r2 === "ok" ? "● Online" : "○ Unavailable"}`,
-                      ),
-                    )
+                        `Derpibooru · ${status("derpibooru")} · Primary\nTrixiebooru · ${status("trixiebooru")} · Backup\nTwibooru · ${status("twibooru")} · Emergency Backup\nActive · ${v.active ? providerLabels[v.active as ProviderId] : "等待首次抽取"}\nMedia Cache · ${v.mediaCache === "edge" ? "Cloudflare Edge" : "R2 + Edge"}`,
+                      );
+                    })
                     .catch(() => setService("服务暂不可用"));
                 }}
               >
@@ -1276,44 +1531,83 @@ export default function App() {
         ) : (
           <>
             {panel === "collection" && (
-              <div className="rarity-tabs">
-                {["All", ...rarities].map((r) => (
-                  <button
-                    className={rarityFilter === r ? "selected" : ""}
-                    key={r}
-                    onClick={() => setRarityFilter(r)}
-                  >
-                    {r}{" "}
-                    {r === "All"
-                      ? journal.items.length
-                      : journal.items.filter((p) => rarity(p) === r).length}
-                  </button>
-                ))}
+              <div className="collection-filters">
+                <div className="rarity-tabs">
+                  {["All", ...rarities].map((r) => (
+                    <button
+                      className={rarityFilter === r ? "selected" : ""}
+                      key={r}
+                      onClick={() => setRarityFilter(r)}
+                    >
+                      {r}{" "}
+                      {r === "All"
+                        ? journal.items.length
+                        : journal.items.filter((p) => rarity(p) === r).length}
+                    </button>
+                  ))}
+                </div>
+                <div className="rarity-tabs compact-tabs">
+                  {(
+                    [
+                      ["all", "All"],
+                      ["safe", "Safe"],
+                      ["teen", "13+"],
+                      ["adult", "18+"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={collectionContent === value ? "selected" : ""}
+                      onClick={() => setCollectionContent(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="rarity-tabs compact-tabs">
+                  {(["all", "clean", "dark", "graphic"] as const).map(
+                    (value) => (
+                      <button
+                        key={value}
+                        className={
+                          collectionGraphic === value ? "selected" : ""
+                        }
+                        onClick={() => setCollectionGraphic(value)}
+                      >
+                        {value === "all"
+                          ? "All"
+                          : graphicLabels[value].replace(/^\S+\s/, "")}
+                      </button>
+                    ),
+                  )}
+                </div>
               </div>
             )}
             {list.length ? (
               <div className="collection-grid">
                 {list.map((p) => (
                   <button
-                    key={p.id}
+                    key={p.canonicalId}
                     title={`${p.artists.join(", ") || "Artist 未标注"} · Score ${p.score} · 查看`}
                     onClick={() => void reopen(p)}
                   >
                     <img
-                      src={imageSource(p, "preview")}
+                      src={imageSource(p, "preview", savedContentSettings(p))}
                       loading="lazy"
                       alt={p.tags.slice(0, 3).join(", ")}
                       className={
-                        p.spoilered !== false || p.filterId !== filter
+                        p.spoilered !== false ||
+                        (isAdult(p) &&
+                          (blurAdultThumbs || contentLevel !== "adult"))
                           ? "spoiler-art"
                           : ""
                       }
                     />
                     <span>
                       #{p.id}{" "}
-                      {favorites.some((f) => f.id === p.id) && (
-                        <Check size={13} />
-                      )}
+                      {favorites.some(
+                        (favorite) => favorite.canonicalId === p.canonicalId,
+                      ) && <Check size={13} />}
                     </span>
                     <small className={`rarity-badge tier-${rarity(p)}`}>
                       {rarityLabel(p)}

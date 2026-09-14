@@ -1,13 +1,12 @@
 import { z } from "zod";
 import { characters, type Character } from "../../shared/types";
 import { publicPony } from "../../shared/safety";
-import {
-  rememberFilteredImage,
-  searchRandomImage,
-} from "../services/derpibooru";
+import { rollTags } from "../../shared/search-tags";
 import type { Env } from "../types";
 import { resolveFilter } from "../services/filters";
-import { rollTags } from "../../shared/search-tags";
+import { searchWithFailover } from "../services/providers";
+import { contentFields, contentSettings } from "./params";
+
 export async function randomRoute(url: URL, env: Env) {
   const params = z
     .object({
@@ -19,15 +18,15 @@ export async function randomRoute(url: URL, env: Env) {
         .string()
         .regex(/^(0|[1-9]\d{0,9})$/)
         .optional(),
-      strict: z.enum(["0", "1"]).default("1"),
       tag: z
         .string()
-        .refine((t) => rollTags.includes(t))
+        .refine((tag) => rollTags.includes(tag))
         .optional(),
       exclude: z
         .string()
-        .regex(/^[1-9]\d{0,9}$/)
+        .regex(/^(?:(?:derpibooru|twibooru):)?[1-9]\d{0,9}$/)
         .optional(),
+      ...contentFields,
     })
     .strict()
     .parse(Object.fromEntries(url.searchParams));
@@ -35,19 +34,21 @@ export async function randomRoute(url: URL, env: Env) {
     env,
     params.filter === undefined ? undefined : Number(params.filter),
   );
-  // A fallback catalog has no verified native filter to defer to, so it stays safe.
-  const strictSafe = filter.id === 0 || params.strict === "1";
-  const image = await searchRandomImage(
-    env,
-    params.character,
-    params.mode,
-    params.exclude ? Number(params.exclude) : undefined,
-    filter.id,
-    params.tag,
-    strictSafe,
-  );
-  await rememberFilteredImage(image, filter.id, strictSafe);
-  return Response.json(publicPony(image, filter.id, strictSafe), {
+  const content = contentSettings(params);
+  const excludeCanonicalId = params.exclude
+    ? params.exclude.includes(":")
+      ? params.exclude
+      : `derpibooru:${params.exclude}`
+    : undefined;
+  const image = await searchWithFailover(env, {
+    character: params.character,
+    mode: params.mode,
+    content,
+    filterId: filter.id,
+    tag: params.tag,
+    excludeCanonicalId,
+  });
+  return Response.json(publicPony(image, content, filter.id), {
     headers: { "Cache-Control": "no-store" },
   });
 }

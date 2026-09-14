@@ -3,22 +3,18 @@ import type { FilterCatalog, PonyFilter } from "../shared/filters";
 export function FilterSelector({
   catalog,
   selected,
-  strictSafe,
   onSelect,
 }: {
   catalog: FilterCatalog;
   selected: number;
-  strictSafe: boolean;
   onSelect: (id: number) => void;
 }) {
   const [confirm, setConfirm] = useState<PonyFilter | null>(null);
   return (
     <div className="filter-list">
       <p>
-        {strictSafe
-          ? "真实 Derpibooru 规则 + 严格 Safe 内容保护。"
-          : "当前仅按真实 Derpibooru Filter 规则展示。"}
-        隐藏规则由上游搜索执行；Spoiler 内容需要点击显示。
+        Derpibooru Filter 用于隐藏标签、剧透和个人偏好。Pony Roulette
+        的内容等级始终优先，Filter 不能放宽它。
       </p>
       <small>
         每 6 小时更新 ·{" "}
@@ -70,11 +66,8 @@ export function FilterSelector({
         >
           <h3>切换到 {confirm.name}？</h3>
           <p>
-            此过滤器可能显示成人、暴力或其他敏感内容。
-            {strictSafe
-              ? "严格 Safe 内容保护仍会额外生效。"
-              : "当前严格 Safe 内容保护已关闭。"}
-            你确定要继续吗？
+            此过滤器可能显示成人、暴力或其他敏感内容。 Pony Roulette
+            当前选择的性内容和图形内容等级仍会强制生效。 你确定要继续吗？
           </p>
           <button onClick={() => setConfirm(null)}>返回</button>
           <button

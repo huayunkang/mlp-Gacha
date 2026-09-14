@@ -14,29 +14,67 @@ export const characters = {
   derpy: "Derpy",
   cadance: "Princess Cadance",
 } as const;
+
 export type Character = keyof typeof characters;
 export type Mode = "random" | "top" | "featured" | "surprise";
-export interface Pony {
+export type ProviderId = "derpibooru" | "trixiebooru" | "twibooru";
+export type ContentLevel = "safe" | "teen" | "adult";
+export type AdultMode = "all" | "questionable" | "explicit";
+export type Rating =
+  "safe" | "suggestive" | "questionable" | "explicit" | "unknown";
+export type GraphicLevel = "clean" | "dark" | "graphic";
+export type NormalizedGraphicLevel = GraphicLevel | "unknown";
+
+export interface ContentSettings {
+  contentLevel: ContentLevel;
+  adultMode: AdultMode;
+  graphicLevel: GraphicLevel;
+}
+
+export interface NormalizedImage {
+  provider: ProviderId;
+  providerId: number;
+  canonicalId: string;
+  derpibooruId?: number;
+  width: number;
+  height: number;
+  format: string;
+  score: number;
+  wilsonScore?: number;
+  upvotes?: number;
+  downvotes?: number;
+  favorites?: number;
+  tags: string[];
+  artists: string[];
+  sourceUrl?: string;
+  sourceUrls?: string[];
+  pageUrl: string;
+  rating: Rating;
+  graphicLevel: NormalizedGraphicLevel;
+  spoilered: boolean;
+  featured: boolean;
+  createdAt?: string;
+  representations: {
+    thumb?: string;
+    small?: string;
+    medium?: string;
+    large?: string;
+    full?: string;
+  };
+}
+
+export interface Pony extends Omit<NormalizedImage, "representations"> {
+  /** Provider-local numeric ID, retained for older UI and saved records. */
   id: number;
   image: string;
   preview: string;
-  width: number;
-  height: number;
-  tags: string[];
-  artists: string[];
-  score: number;
-  spoilered?: boolean;
   filterId?: number;
-  strictSafe?: boolean;
-  wilsonScore?: number;
-  favorites?: number;
-  upvotes?: number;
-  featured?: boolean;
-  format?: string;
-  createdAt?: string;
-  sources?: string[];
-  sourceUrl: string;
+  contentLevel: ContentLevel;
+  adultMode: AdultMode;
+  selectedGraphicLevel: GraphicLevel;
 }
+
 export interface SavedPony extends Pony {
   savedAt: number;
+  viewedAt?: number;
 }

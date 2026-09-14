@@ -1,5 +1,4 @@
-// Optional LOCAL workerd launcher for machines that require an HTTP proxy.
-// The production Worker and wrangler.toml remain unchanged.
+// Optional local workerd launcher for machines that require an HTTP proxy.
 import { build } from "esbuild";
 import {
   Miniflare,
@@ -7,7 +6,6 @@ import {
   Response as MFResponse,
 } from "miniflare";
 import { fetch, EnvHttpProxyAgent } from "undici";
-import { cdnUrl } from "../shared/safety.js";
 if (!process.env.HTTPS_PROXY && !process.env.HTTP_PROXY)
   throw new Error("Set HTTPS_PROXY to your own local HTTP proxy first.");
 const dispatcher = new EnvHttpProxyAgent();
@@ -26,8 +24,6 @@ const mf = new Miniflare(
     modules: true,
     script: bundle.outputFiles[0]!.text,
     compatibilityDate: "2026-09-01",
-    r2Buckets: ["PONY_IMAGES"],
-    resourcePersistencePath: ".wrangler/proxy-state",
     assets: {
       directory: process.env.QA_NETWORK
         ? "test-results/qa-client"
@@ -40,6 +36,7 @@ const mf = new Miniflare(
     bindings: {
       DERPIBOORU_BASE_URL: "https://derpibooru.org",
       REQUEST_TIMEOUT_MS: "10000",
+      PROVIDER_TIMEOUT_MS: "3500",
       REQUEST_RETRIES: "2",
       MAX_IMAGE_SIZE_MB: "8",
       CACHE_TTL_DAYS: "30",
@@ -62,7 +59,26 @@ const mf = new Miniflare(
     outboundService: async (req) => {
       if (process.env.QA_OFFLINE === "1")
         return new MFResponse("Simulated upstream outage", { status: 503 });
-      cdnUrl(req.url);
+      const upstream = new URL(req.url);
+      const allowed = [
+        "derpibooru.org",
+        "derpicdn.net",
+        "trixiebooru.org",
+        "twibooru.org",
+        "cdn.twibooru.org",
+      ];
+      if (
+        upstream.protocol !== "https:" ||
+        upstream.username ||
+        upstream.password ||
+        upstream.port ||
+        !allowed.some(
+          (host) =>
+            upstream.hostname === host ||
+            upstream.hostname.endsWith(`.${host}`),
+        )
+      )
+        throw new Error("Rejected upstream host");
       const res = await fetch(req.url, {
         dispatcher,
         redirect: "manual",
@@ -77,7 +93,7 @@ const mf = new Miniflare(
   }),
 );
 await mf.ready;
-console.info("Local Worker + local R2 + your proxy: http://127.0.0.1:8788");
+console.info("Local Worker + edge cache + your proxy: http://127.0.0.1:8788");
 for (const signal of ["SIGINT", "SIGTERM"])
   process.on(signal, () => {
     void mf

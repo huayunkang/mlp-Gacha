@@ -1,28 +1,25 @@
 import type { Env } from "../types";
-import { checkUpstream } from "../services/derpibooru";
-export async function healthRoute(url: URL, env: Env, ctx: ExecutionContext) {
-  const key = new Request(new URL("/__health-v1", url.origin).toString());
-  const previous = await caches.default.match(key);
-  if (previous) {
-    const result = new Response(previous.body, previous);
-    result.headers.set("Cache-Control", "no-store");
-    return result;
-  }
-  const [derpi, r2] = await Promise.allSettled([
-    checkUpstream(env),
-    env.PONY_IMAGES.head("__health_check__"),
-  ]);
-  const healthy = derpi.status === "fulfilled" && r2.status === "fulfilled";
-  const response = Response.json(
+import { providerHealthSnapshot } from "../services/providers";
+
+export async function healthRoute(env: Env) {
+  const snapshot = await providerHealthSnapshot();
+  const statuses = Object.values(snapshot.providers).map(
+    (state) => state.status,
+  );
+  return Response.json(
     {
-      status: healthy ? "ok" : "degraded",
-      derpibooru: derpi.status === "fulfilled" ? "reachable" : "unreachable",
-      r2: r2.status === "fulfilled" ? "ok" : "error",
+      status: statuses.includes("online") ? "ok" : "degraded",
+      providers: Object.fromEntries(
+        Object.entries(snapshot.providers).map(([id, state]) => [
+          id,
+          state.status,
+        ]),
+      ),
+      providerDetails: snapshot.providers,
+      active: snapshot.active,
+      mediaCache: env.PONY_IMAGES ? "r2+edge" : "edge",
       checkedAt: new Date().toISOString(),
     },
-    { headers: { "Cache-Control": "public, max-age=60" } },
+    { headers: { "Cache-Control": "no-store" } },
   );
-  ctx.waitUntil(caches.default.put(key, response.clone()).catch(() => {}));
-  response.headers.set("Cache-Control", "no-store");
-  return response;
 }

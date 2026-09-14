@@ -1,5 +1,5 @@
 import type { Character, Mode } from "../shared/types.js";
-import type { UpstreamImage } from "../shared/safety.js";
+import type { UpstreamImage } from "../shared/legacy-safety.js";
 import type { Upstream } from "./upstream.js";
 interface Pool {
   images: UpstreamImage[];

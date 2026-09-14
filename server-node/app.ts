@@ -12,7 +12,7 @@ import {
   type Upstream,
   UpstreamError,
 } from "./upstream.js";
-import { publicPony } from "../shared/safety.js";
+import { legacyPublicPony } from "../shared/legacy-safety.js";
 import { RandomPool } from "./pool.js";
 import { ImageCache } from "./cache.js";
 export async function createApp(api: Upstream = upstream, cacheDir?: string) {
@@ -70,13 +70,16 @@ export async function createApp(api: Upstream = upstream, cacheDir?: string) {
           )
           .default("all"),
         mode: z.enum(["random", "top", "featured"]).default("random"),
-        exclude: z.string().regex(/^[1-9]\d{0,9}$/).optional(),
+        exclude: z
+          .string()
+          .regex(/^[1-9]\d{0,9}$/)
+          .optional(),
       })
       .strict()
       .parse(req.query);
     res
       .set("Cache-Control", "no-store")
-      .json(publicPony(await pool.next(params.character, params.mode)));
+      .json(legacyPublicPony(await pool.next(params.character, params.mode)));
   });
   app.get("/api/image/:id", limiter(240), async (req, res) => {
     const id = z
@@ -119,16 +122,14 @@ export async function createApp(api: Upstream = upstream, cacheDir?: string) {
         err instanceof Error ? err.message : "Unknown error",
       );
       if (!res.headersSent)
-        res
-          .status(status)
-          .json({
-            error:
-              status === 400
-                ? "请求参数不正确。"
-                : status === 404
-                  ? "这张图片暂时无法公开展示。"
-                  : "暂时没找到小马，再试一次 ✨",
-          });
+        res.status(status).json({
+          error:
+            status === 400
+              ? "请求参数不正确。"
+              : status === 404
+                ? "这张图片暂时无法公开展示。"
+                : "暂时没找到小马，再试一次 ✨",
+        });
     },
   );
   return { app, cache };
