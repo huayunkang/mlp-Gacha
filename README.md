@@ -4,6 +4,8 @@ MLP 图片发现站：选择角色、内容等级和模式，转动 Pony Gacha�
 
 V3 在现有 V2 项目上增量开发，保留扭蛋机、收藏、历史、Collection、角色筛选、稀有度、分享、PWA 与同源图片代理。生产环境使用 **Cloudflare Worker + Static Assets + Cache API**，不要求 R2、数据库或付费后端。
 
+当前部署：[pony-roulette.huayunkanghua.workers.dev](https://pony-roulette.huayunkanghua.workers.dev)
+
 ## 架构
 
 ```text
