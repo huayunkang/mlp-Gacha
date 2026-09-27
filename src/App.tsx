@@ -42,6 +42,12 @@ import {
 } from "./discoveries";
 import { rollTags, tagCategory } from "../shared/search-tags";
 import { Particles } from "./Particles";
+import {
+  searchCollection,
+  parseFavoritesBackup,
+  mergeFavorites,
+  type CollectionSort,
+} from "./collection";
 const modes: { key: Mode; name: string; icon: typeof Dices }[] = [
   { key: "random", name: "随心遇见", icon: Dices },
   { key: "top", name: "高分佳作", icon: Sparkles },
@@ -187,6 +193,9 @@ export default function App() {
   const [journal, setJournal] = useState(blankJournal);
   const [journalReady, setJournalReady] = useState(false);
   const [search, setSearch] = useState("");
+  const [librarySearch, setLibrarySearch] = useState("");
+  const [librarySort, setLibrarySort] = useState<CollectionSort>("recent");
+  const [libraryPage, setLibraryPage] = useState(0);
   const [rarityFilter, setRarityFilter] = useState("All");
   const [collectionContent, setCollectionContent] = useState<
     "all" | ContentLevel
@@ -195,6 +204,17 @@ export default function App() {
     "all" | GraphicLevel
   >("all");
   const [service, setService] = useState("");
+  useEffect(
+    () => setLibraryPage(0),
+    [
+      panel,
+      librarySearch,
+      librarySort,
+      rarityFilter,
+      collectionContent,
+      collectionGraphic,
+    ],
+  );
   const [rollTag, setRollTag] = useState("");
   const [quality, setQuality] = useState<
     "auto" | "saver" | "high" | "original"
@@ -704,6 +724,54 @@ export default function App() {
             )
             .map((p) => ({ ...p, savedAt: p.lastSeen }))
         : readList("pony-history");
+  const library = searchCollection(list, librarySearch, librarySort);
+  const pageCount = Math.max(1, Math.ceil(library.length / 24));
+  const currentPage = Math.min(libraryPage, pageCount - 1);
+  const visibleLibrary = library.slice(
+    currentPage * 24,
+    (currentPage + 1) * 24,
+  );
+  const exportFavorites = () => {
+    const url = URL.createObjectURL(
+      new Blob(
+        [
+          JSON.stringify(
+            {
+              app: "pony-roulette",
+              version: 1,
+              exportedAt: new Date().toISOString(),
+              favorites,
+            },
+            null,
+            2,
+          ),
+        ],
+        { type: "application/json" },
+      ),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `pony-favorites-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const importFavorites = async (file: File) => {
+    try {
+      if (file.size > 5 * 1024 * 1024)
+        throw new Error("备份文件不能超过 5 MB。");
+      const incoming = parseFavoritesBackup(await file.text());
+      const existing = readList("pony-favorites");
+      const merged = mergeFavorites(existing, incoming);
+      if (!saveList("pony-favorites", merged))
+        throw new Error("浏览器空间不足，未能保存备份。");
+      setFavorites(merged);
+      setNotice(
+        `新增 ${merged.length - existing.length} 条收藏，原收藏已保留（最多 1000 张）。`,
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "无法读取备份文件。");
+    }
+  };
   const share = async () => {
     if (!pony) return;
     const shared = new URL(location.origin);
@@ -1423,6 +1491,27 @@ export default function App() {
           </div>
         ) : panel === "settings" ? (
           <div className="settings">
+            <section className="backup-controls">
+              <h3>收藏备份</h3>
+              <small>
+                下载收藏元数据，在另一台设备导入。不会上传图片或更改内容等级。
+              </small>
+              <button onClick={exportFavorites}>
+                导出收藏 · {favorites.length}
+              </button>
+              <label>
+                合并收藏备份
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void importFavorites(file);
+                  }}
+                />
+              </label>
+            </section>
             <label>
               抽取动画
               <select
@@ -1530,6 +1619,26 @@ export default function App() {
           </div>
         ) : (
           <>
+            <div className="library-tools">
+              <input
+                aria-label="搜索收藏与图鉴"
+                placeholder="搜索角色、画师、标签或图片 ID"
+                value={librarySearch}
+                onChange={(event) => setLibrarySearch(event.target.value)}
+              />
+              <select
+                aria-label="排序方式"
+                value={librarySort}
+                onChange={(event) =>
+                  setLibrarySort(event.target.value as CollectionSort)
+                }
+              >
+                <option value="recent">最近发现</option>
+                <option value="score">评分最高</option>
+                <option value="rarity">稀有度最高</option>
+              </select>
+              <small role="status">{library.length} 张作品</small>
+            </div>
             {panel === "collection" && (
               <div className="collection-filters">
                 <div className="rarity-tabs">
@@ -1583,16 +1692,21 @@ export default function App() {
                 </div>
               </div>
             )}
-            {list.length ? (
+            {library.length ? (
               <div className="collection-grid">
-                {list.map((p) => (
+                {visibleLibrary.map((p) => (
                   <button
                     key={p.canonicalId}
                     title={`${p.artists.join(", ") || "Artist 未标注"} · Score ${p.score} · 查看`}
                     onClick={() => void reopen(p)}
                   >
                     <img
-                      src={imageSource(p, "preview", savedContentSettings(p))}
+                      decoding="async"
+                      src={
+                        isAdult(p) && !adultConfirmed
+                          ? undefined
+                          : imageSource(p, "preview", savedContentSettings(p))
+                      }
                       loading="lazy"
                       alt={p.tags.slice(0, 3).join(", ")}
                       className={
@@ -1624,15 +1738,38 @@ export default function App() {
               <div className="empty">
                 <Heart size={35} />
                 <h3>
-                  {panel === "favorites"
-                    ? "把喜欢的小马留在这里"
-                    : "故事才刚刚开始"}
+                  {librarySearch
+                    ? "没有匹配的作品"
+                    : panel === "favorites"
+                      ? "把喜欢的小马留在这里"
+                      : "故事才刚刚开始"}
                 </h3>
                 <p>
-                  {panel === "favorites"
-                    ? "点击图片下方的「收藏」，下次再见。"
-                    : "你最近遇见的小马会出现在这里。"}
+                  {librarySearch
+                    ? "试试其他角色、标签或画师名称。"
+                    : panel === "favorites"
+                      ? "点击图片下方的「收藏」，下次再见。"
+                      : "你最近遇见的小马会出现在这里。"}
                 </p>
+              </div>
+            )}
+            {pageCount > 1 && (
+              <div className="library-pagination">
+                <button
+                  disabled={currentPage === 0}
+                  onClick={() => setLibraryPage(currentPage - 1)}
+                >
+                  上一页
+                </button>
+                <span aria-live="polite">
+                  {currentPage + 1} / {pageCount}
+                </span>
+                <button
+                  disabled={currentPage >= pageCount - 1}
+                  onClick={() => setLibraryPage(currentPage + 1)}
+                >
+                  下一页
+                </button>
               </div>
             )}
           </>

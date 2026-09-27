@@ -1,8 +1,10 @@
-# Pony Roulette V3
+# Pony Roulette V4
 
 MLP 图片发现站：选择角色、内容等级和模式，转动 Pony Gacha，在轻量的扭蛋演出中发现、收藏并整理作品。
 
-V3 在现有 V2 项目上增量开发，保留扭蛋机、收藏、历史、Collection、角色筛选、稀有度、分享、PWA 与同源图片代理。生产环境使用 **Cloudflare Worker + Static Assets + Cache API**，不要求 R2、数据库或付费后端。
+V4 在现有 V3 项目上增量开发，保留扭蛋机、收藏、历史、Collection、角色筛选、稀有度、分享、PWA 与同源图片代理。生产环境使用 **Cloudflare Worker + Static Assets + Cache API**，不要求 R2、数据库或付费后端。
+
+V4 新增图鉴／收藏／历史搜索、最近／评分／稀有度排序、每页 24 张、收藏 JSON 备份导入导出。修复 Twibooru 最后一个配额槽的成功响应被丢弃的问题，对没有 Content-Length 的上游元数据也执行 1 MB 流式大小限制。详见 [V4 说明](docs/V4.md)。
 
 当前部署：[pony-roulette.huayunkanghua.workers.dev](https://pony-roulette.huayunkanghua.workers.dev)
 

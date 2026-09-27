@@ -6,6 +6,66 @@
   font-weight: 400;
   font-size: 14px;
 }
+.library-tools {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.library-tools input,
+.library-tools select {
+  min-width: 0;
+  border: 1px solid #e6dfee;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  color: #65566f;
+  font: inherit;
+}
+.library-tools input {
+  flex: 1 1 230px;
+}
+.library-tools small {
+  color: #988da2;
+}
+.library-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 0 5px;
+}
+.library-pagination button,
+.backup-controls > button {
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: #eee4f7;
+}
+.library-pagination button:disabled {
+  cursor: default;
+}
+.backup-controls {
+  border: 1px solid #e6dfee;
+  border-radius: 16px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+.backup-controls h3 {
+  margin: 0;
+}
+.backup-controls label {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.backup-controls input {
+  max-width: 100%;
+  font-size: 11px;
+}
+.collection-grid img {
+  background: #eee7f5;
+}
 * {
   box-sizing: border-box;
 }

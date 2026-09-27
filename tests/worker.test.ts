@@ -70,6 +70,8 @@ interface HarnessState {
   twibooru: ProviderOutcome;
   events: URL[];
   tags?: string[];
+  remaining?: string;
+  oversized?: boolean;
 }
 
 let bundled: string;
@@ -135,6 +137,11 @@ async function makeWorker(state: HarnessState) {
             ? "twibooru"
             : "derpibooru";
         const outcome = state[provider];
+        if (provider === "derpibooru" && state.oversized)
+          return new MFResponse(
+            JSON.stringify({ padding: "x".repeat(1024 * 1024) }),
+            { headers: { "Content-Type": "application/json" } },
+          );
         if (outcome === "503")
           return new MFResponse("unavailable", { status: 503 });
         if (outcome === "challenge")
@@ -144,9 +151,17 @@ async function makeWorker(state: HarnessState) {
           });
         if (provider === "twibooru") {
           if (url.pathname.includes("search/posts"))
-            return MFResponse.json({
-              posts: outcome === "empty" ? [] : [twibooruPost(912, state.tags)],
-            });
+            return MFResponse.json(
+              {
+                posts:
+                  outcome === "empty" ? [] : [twibooruPost(912, state.tags)],
+              },
+              {
+                headers: state.remaining
+                  ? { "X-RL-Remaining": state.remaining }
+                  : {},
+              },
+            );
           return MFResponse.json({ post: twibooruPost(912, state.tags) });
         }
         return MFResponse.json({
@@ -167,6 +182,24 @@ async function makeWorker(state: HarnessState) {
 
 const searches = (state: HarnessState) =>
   state.events.filter((url) => /search\/(images|posts)$/.test(url.pathname));
+
+test("oversized metadata without a declared length falls back safely", async () => {
+  const state: HarnessState = {
+    derpibooru: "ok",
+    trixiebooru: "ok",
+    twibooru: "ok",
+    events: [],
+    oversized: true,
+  };
+  const worker = await makeWorker(state);
+  try {
+    const response = await worker.dispatchFetch("https://pony.test/api/random");
+    assert.equal(response.status, 200);
+    assert.equal(((await response.json()) as Pony).provider, "trixiebooru");
+  } finally {
+    await worker.dispose();
+  }
+});
 
 test("image host validation blocks SSRF shapes", () => {
   assert.equal(
@@ -264,6 +297,7 @@ test("challenge and outage fall through to Twibooru with canonical mapping", asy
     twibooru: "ok",
     events: [],
     tags: ["suggestive", "grimdark"],
+    remaining: "0",
   };
   const worker = await makeWorker(state);
   try {

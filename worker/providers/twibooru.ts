@@ -6,7 +6,7 @@ import {
 } from "../../shared/content";
 import type { NormalizedImage } from "../../shared/types";
 import type { Env } from "../types";
-import { providerJSON, ProviderError, readRateLimit } from "./http";
+import { providerJSON, ProviderError } from "./http";
 import type {
   PonyImageProvider,
   ProviderImageOptions,
@@ -104,15 +104,8 @@ async function request(env: Env, path: string, params: Record<string, string>) {
   for (const [key, value] of Object.entries(params))
     url.searchParams.set(key, value);
   const result = await providerJSON(env, "twibooru", url);
-  const rate = readRateLimit(result.headers);
-  if (rate.remaining !== undefined && rate.remaining <= 0)
-    throw new ProviderError(
-      "Twibooru rate limit exhausted",
-      "twibooru",
-      429,
-      true,
-      "rate_limit",
-    );
+  // A successful response that used the last quota slot is still usable.
+  // Subsequent requests receive HTTP 429 and are handled by providerJSON.
   return result.value;
 }
 
